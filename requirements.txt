@@ -5,3 +5,4 @@ beautifulsoup4
 sqlalchemy
 apscheduler<4
 python-dotenv
+authlib

@@ -6,7 +6,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Boolean,
-    Float
+    Float,
+    UniqueConstraint
 )
 
 from sqlalchemy.orm import (
@@ -49,6 +50,10 @@ class User(Base):
 
     picture: Mapped[str | None] = mapped_column(
         String(1000)
+    )
+
+    trackings: Mapped[list["Tracking"]] = relationship(
+        "Tracking", back_populates="user", cascade="all, delete-orphan"
     )
 
 
@@ -102,6 +107,10 @@ class Product(Base):
         cascade="all, delete-orphan"
     )
 
+    trackings: Mapped[list["Tracking"]] = relationship(
+        "Tracking", back_populates="product", cascade="all, delete-orphan"
+    )
+
 
 class PriceHistory(Base):
     __tablename__ = "price_history"
@@ -136,6 +145,9 @@ class PriceHistory(Base):
 class Tracking(Base):
 
     __tablename__ = "trackings"
+    __table_args__ = (
+        UniqueConstraint("user_id", "product_id", name="uq_tracking_user_product"),
+    )
 
     id: Mapped[int] = mapped_column(
         primary_key=True,
@@ -162,3 +174,6 @@ class Tracking(Base):
         default=False,
         nullable=False
     )
+
+    user: Mapped["User"] = relationship("User", back_populates="trackings")
+    product: Mapped["Product"] = relationship("Product", back_populates="trackings")

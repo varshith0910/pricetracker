@@ -1,5 +1,7 @@
+from sqlalchemy.orm import joinedload
+
 from database.database import SessionLocal
-from database.models import Product, PriceHistory
+from database.models import Product, PriceHistory, Tracking
 
 from scraper.amazon import AmazonScraper
 
@@ -86,41 +88,33 @@ def check_product(product_id: int):
                 f"New: ₹{new_price}"
             )
 
-            if (
-                product.target_price is not None
-                and new_price <= product.target_price
-                and not product.alert_sent
-                ):
+            trackings = (
+                db.query(Tracking)
+                .options(joinedload(Tracking.user))
+                .filter(Tracking.product_id == product.id)
+                .all()
+            )
 
-                print("TARGET PRICE REACHED!")
-
-                # Send email
-                try:
-
-                    send_price_drop_email(
-                        recipient_email=product.email,
-                        product_title=product.title,
-                        product_url=product.url,
-                        old_price=old_price,
-                        new_price=new_price
-                    )
-                    # Prevent future emails
-                    product.alert_sent = True
-
-                    print("Alert sent!")
-                    
-                except Exception as e:
-
-                    print(
-                        f"Email failed: {e}"
-                    )
-            elif new_price > old_price:
-                product.alert_sent = False
-                print("Price increased")
-
-            else:
-
-                print("Price unchanged")
+            for tracking in trackings:
+                if new_price <= tracking.target_price and not tracking.alert_sent:
+                    print("TARGET PRICE REACHED!")
+                    try:
+                        send_price_drop_email(
+                            recipient_email=tracking.user.email,
+                            product_title=product.title,
+                            product_url=product.url,
+                            old_price=old_price,
+                            new_price=new_price,
+                        )
+                        tracking.alert_sent = True
+                        print("Alert sent!")
+                    except Exception as e:
+                        print(f"Email failed: {e}")
+                elif new_price > old_price:
+                    tracking.alert_sent = False
+                    print("Price increased")
+                else:
+                    print("Price unchanged")
 
         else:
 
@@ -132,13 +126,8 @@ def check_product(product_id: int):
         # Save new price
         # --------------------------------
 
-        price_record = PriceHistory(
-            product_id=product.id,
-            price=new_price
-        )
-
-        db.add(price_record)
-
+        product.current_price = new_price
+        db.add(PriceHistory(product_id=product.id, price=new_price))
         db.commit()
 
     except Exception as e:
@@ -154,13 +143,16 @@ def check_product(product_id: int):
         db.close()
 
 
-def check_all_products():
+def check_all_products(product_ids=None):
 
     db = SessionLocal()
 
     try:
 
-        products = db.query(Product).all()
+        products_query = db.query(Product)
+        if product_ids is not None:
+            products_query = products_query.filter(Product.id.in_(product_ids))
+        products = products_query.all()
 
         print(
             f"\nChecking {len(products)} products..."
